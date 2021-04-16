@@ -4,8 +4,8 @@ import 'dart:io' show HttpClient, HttpStatus;
 import 'dart:math' show Random;
 
 class MessageEvent {
-  final String name;
-  final String data;
+  final String? name;
+  final String? data;
 
   MessageEvent({this.name, this.data});
 }
@@ -30,13 +30,13 @@ class EventSource {
   static const int CLOSED = 2;
 
   /// Client used for the request.
-  HttpClient _client;
+  HttpClient? _client;
 
   /// Random number sequence for exponential backoff.
   final Random _random = Random();
 
   /// Data controller for the `.events` attribute.
-  StreamController<MessageEvent> _streamController;
+  late StreamController<MessageEvent> _streamController;
 
   /// Mutable readyState.
   int _readyState = CLOSED;
@@ -48,22 +48,22 @@ class EventSource {
   final Duration maxReconnectDelay;
 
   /// Time to wait before next reconnection, null represents initial timout.
-  Duration _reconnectDelay;
+  Duration? _reconnectDelay;
 
   /// Timer used while waiting to reconnect.
-  Timer _reconnecting;
+  Timer? _reconnecting;
 
   /// The last-seen event ID, used when reconnecting.
-  String _lastEventID;
+  String? _lastEventID;
 
   /// The `event:` value for the current block.
-  String _nextEventName;
+  String? _nextEventName;
 
   /// The data value for the current block.
-  String _nextData;
+  String? _nextData;
 
   /// The function used to create HttpClient when connecting.
-  HttpClientFactory clientFactory;
+  HttpClientFactory? clientFactory;
 
   /// The URL of the EventSource endpoint.
   final Uri url;
@@ -75,10 +75,7 @@ class EventSource {
   Stream<MessageEvent> get events => _streamController.stream;
 
   /// Create an EventSource for a given remote URL.
-  EventSource(this.url,
-      {this.clientFactory,
-      this.initialReconnectDelay = const Duration(seconds: 1),
-      this.maxReconnectDelay = const Duration(minutes: 1)})
+  EventSource(this.url, {this.clientFactory, this.initialReconnectDelay = const Duration(seconds: 1), this.maxReconnectDelay = const Duration(minutes: 1)})
       : assert(url != null),
         assert(initialReconnectDelay != null),
         assert(maxReconnectDelay != null) {
@@ -101,18 +98,18 @@ class EventSource {
   Future<Null> open() async {
     if (_readyState != CLOSED) return;
     if (_reconnecting != null) {
-      _reconnecting.cancel();
+      _reconnecting!.cancel();
       _reconnecting = null;
     }
 
     _readyState = CONNECTING;
 
-    _client = clientFactory();
+    _client = clientFactory!();
 
-    final request = await _client.getUrl(url);
+    final request = await _client!.getUrl(url);
     request.headers.set('Accept', _MIME_TYPE);
     if (_lastEventID != null) {
-      request.headers.set('Last-Event-ID', _lastEventID);
+      request.headers.set('Last-Event-ID', _lastEventID!);
     }
 
     final response = await request.close();
@@ -131,10 +128,7 @@ class EventSource {
     // One or both of "done" and "error" events can trigger. Ensure reconnect
     // is only called once per connection.
     var reconnectOnce = _onceFunc(_reconnect);
-    utf8.decoder
-        .bind(response)
-        .transform(LineSplitter())
-        .listen(_onMessage, onDone: reconnectOnce, onError: (_) {
+    utf8.decoder.bind(response).transform(LineSplitter()).listen(_onMessage, onDone: reconnectOnce as void Function()?, onError: (_) {
       reconnectOnce();
     });
   }
@@ -143,12 +137,12 @@ class EventSource {
   /// If the connection is already closed, the method does nothing.
   void close() {
     if (_reconnecting != null) {
-      _reconnecting.cancel();
+      _reconnecting!.cancel();
       _reconnecting = null;
     }
 
     if (_readyState != CLOSED) {
-      _client.close(force: true);
+      _client!.close(force: true);
       _client = null;
       _readyState = CLOSED;
     }
@@ -158,7 +152,7 @@ class EventSource {
   void _reconnect() {
     close();
     _reconnectDelay ??= initialReconnectDelay;
-    _reconnecting = Timer(_reconnectDelay, () {
+    _reconnecting = Timer(_reconnectDelay!, () {
       _reconnecting = null;
       if (_readyState == CLOSED) {
         open().catchError((err) {
@@ -166,8 +160,8 @@ class EventSource {
         });
       }
     });
-    _reconnectDelay *= 1.5 + _random.nextDouble();
-    if (_reconnectDelay > maxReconnectDelay) {
+    _reconnectDelay = _reconnectDelay! * (1.5 + _random.nextDouble());
+    if (_reconnectDelay! > maxReconnectDelay) {
       _reconnectDelay = maxReconnectDelay;
     }
   }
@@ -193,12 +187,11 @@ class EventSource {
     }
 
     String name = message;
-    String value;
+    String? value;
     final colon = message.indexOf(':');
     if (colon != -1) {
       name = message.substring(0, colon);
-      value =
-          message.substring(message[colon + 1] == ' ' ? colon + 2 : colon + 1);
+      value = message.substring(message[colon + 1] == ' ' ? colon + 2 : colon + 1);
     }
 
     if (name == 'event') {
@@ -207,14 +200,14 @@ class EventSource {
       if (_nextData == null) {
         _nextData = value;
       } else {
-        _nextData += '\n$value';
+        _nextData = (_nextData ?? '') + '\n$value';
       }
     } else if (name == 'id') {
       _lastEventID = value;
     } else if (name == 'retry') {
       try {
         final Duration d = Duration(
-          milliseconds: int.parse(value, radix: 10),
+          milliseconds: int.parse(value!, radix: 10),
         );
         initialReconnectDelay = d;
       } catch (_) {
